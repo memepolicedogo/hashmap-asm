@@ -1,4 +1,4 @@
-ASM_FLAGS := -f elf64 -g -F dwarf64
+ASM_FLAGS := -f elf64 -g -F dwarf
 
 example: hashmap.o strhash.o main.o
 	# link all object files into an executable called example
@@ -7,10 +7,10 @@ example: hashmap.o strhash.o main.o
 	rm -f $^
 
 hashmap.o: hashmap.asm
-	nasm ${ASM_FLAGS} @^
+	nasm ${ASM_FLAGS} $^
 
 strhash.o: strhash.asm
-	nasm ${ASM_FLAGS} @^
+	nasm ${ASM_FLAGS} $^
 
 main.o: main.asm
-	nasm ${ASM_FLAGS} @^
+	nasm ${ASM_FLAGS} $^

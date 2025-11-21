@@ -1,3 +1,12 @@
+%macro	enter 0
+	push	rbp
+	mov	rbp, rsp
+%endmacro
+%macro	leave 0
+	mov	rsp, rbp
+	pop	rbp
+%endmacro
+section .text
 ; Size is ALWAYS # of elements
 extern	hash_string
 ; Data:
@@ -14,8 +23,11 @@ extern	hash_string
 global get_item;{
 ; void*	get_item(map* map, char* key);
 get_item:
+	enter
 	; map in r8
-	pop	r8
+	mov	r8, [rbp+16]
+	mov	rax, [rbp+24]
+	push	rax
 	call	hash_string
 	; hash in rax
 	push	rax
@@ -41,12 +53,14 @@ get_item:
 	mov	r8, qword [r8]
 	cmp	r8, 0
 	je	.eInval
-	jmp	collisionLoop
+	jmp	.collisionLoop
 .collisionEnd:
 	mov	rax, qword [r8+8]
+	leave
 	ret
 .eInval:
 	mov	rax, -1
+	leave
 	ret
 ;}
 global write_item;{
@@ -57,10 +71,13 @@ global update_item
 update_item:
 add_item:
 write_item:
+	enter
 	; hash they/them key
 	; map*
-	pop	r8; won't get smashed by the hash function
+	mov	r8, qword [rbp+16]
 	; next up in the stack is the key, we don't care about the actual value so we just get the hash
+	mov	rax, qword [rbp+24]
+	push	rax
 	call	hash_string
 	; rax now has the hash
 	push	rax
@@ -103,7 +120,7 @@ write_item:
 	je	.collisionEnd
 	; update our item pointer
 	mov	rsi, qword [rsi]
-	jmp	collisionLoop
+	jmp	.collisionLoop
 .collisionEnd:
 	; rsi points to the next field of the last collided item
 	add	r8, 8 ; the 2nd qword in the map struct is a pointer to the extra space
@@ -114,22 +131,25 @@ write_item:
 	; add to array
 	; item.hash = hash
 	mov	qword [rsi], rax
-	pop	rax
+	mov	rax, qword [rbp+32]
 	; item.value = value
 	mov	qword [rsi+8], rax
+	leave
 	ret
 ;}
 global create_map;{
 ; map*	create_map(int size);
 create_map:
+	push	rbp
+	mov	rbp, rsp
 	; Allocate memory
 	mov	rax, 9
 	mov	rdi, 0
-	pop	rsi	; size
+	mov	rsi, [rbp+16]
 	push	rsi	; sto fo l8r
 	shl	rsi, 5	; size*32
 	mov	rdx, 3	; PROT_READ | PROT_WRITE
-	mo	r10, 32	; MAP_ANONYMOUS
+	mov	r10, 34	; MAP_ANONYMOUS | MAP_PRIVATE
 	mov	r8, -1	; jus in cas
 	mov	r9, 0
 	syscall
@@ -166,15 +186,19 @@ create_map:
 	pop	rax	; we could have just subtracted 8 again but i already pushed it earlier so im not gonn do that
 	; rax has the map* so we're done
 .ret:
+	mov	rsp, rbp
+	pop	rbp
 	ret
 ;}
 global destroy_map;{
 ;int	destroy_map(map*);
 destroy_map:
+	enter
 	mov	rax, 11
 	pop	rdi
 	mov	rsi, qword [rdi]; # of items
 	shl	rsi, 5 ; # of items * 32 for jit size
 	syscall
+	leave
 	ret
 ;}
