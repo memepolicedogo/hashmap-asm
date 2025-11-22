@@ -20,6 +20,99 @@ extern	hash_string
 ;	void*	extra; // the next bit of free memory we have to store colisions
 ;	item[]	array;
 ;}
+global remove_item;{
+; void*	remove_item(map* map, char* key);
+get_item:
+	enter
+	; map in r8
+	mov	r8, [rbp+16]
+	mov	rax, [rbp+24]
+	push	rax
+	call	hash_string
+	; hash in rax
+	push	rax
+	xor	rdx, rdx
+	; size in rsi
+	mov	rsi, qword [r8]
+	div	rsi
+	; index in rdx
+	mov	rax, rdx
+	xor	rdx, rdx
+	mov	rsi, 24
+	mul	rsi
+	; offset in rax
+	add	r8, 16
+	; start of the array
+	add	r8, rax
+	; location of the item
+	pop	rax
+	; Is the target the root of a collision list?
+	cmp	qword [r8], rax
+	jne	.collision
+	; if so we have to check for links
+	add	r8, 16	; offset of next
+	cmp	qword [r8], 0
+	jne	.moveUp
+	; no links? just delete the stuff
+	sub	r8, 8
+	mov	qword [r8], 0
+	sub	r8, 8
+	mov	qword [r8], 0
+	jmp	.exit
+.moveUp:
+	mov	rsi, qword [r8]
+	add	rsi, 16
+	mov	rdi, r8
+	std	; right to left
+	; set direction flag not the other std
+	mov	rcx, 3
+	rep	movsq
+	; the main array jit is replaced with the data in the next thang over
+	; therefore we are done, we don't remove the data in the void buffer because we only append to it
+	; so to reclaim it we would have to move EVERYTHING else too
+	jmp	.exit
+.collision:
+	; is the key just invalid?
+	cmp	qword [r8], 0
+	je	.enInval
+	; Otherwise we gotta find out where our jit is
+	; use rdi for this because of rep movsq, rdi will be ourjit
+.collisionLoop:
+	; get pointer to next
+	mov	rdi, qword [r8+16]
+	; check if next is real
+	cmp	rdi, 0
+	je	.eInval
+	; check if next is our target
+	cmp	qword [rdi], rax
+	je	.collisionEnd
+	; otherwise move on
+	mov	r8, rdi
+	jmp	.collisionLoop
+	
+.collisionEnd:
+	; get the pointer to the item following our target
+	mov	rsi, qword [rdi+16]
+	; Check if there is a following item
+	cmp	rsi, 0
+	jne	.noNext
+	; If there is a following item just copy its data over
+	mov	rcx, 3
+	std
+	rep	movsq
+	jmp	.exit
+.noNext:
+	; If our target is the end of the list, just null the pointer in the preceding item
+	mov	qword [r8+16], 0
+.exit:
+	mov	rax, 0
+	leave
+	ret
+.eInval:
+	mov	rax, -1
+	leave
+	ret
+;}
 global get_item;{
 ; void*	get_item(map* map, char* key);
 get_item:
@@ -195,7 +288,7 @@ global destroy_map;{
 destroy_map:
 	enter
 	mov	rax, 11
-	pop	rdi
+	mov	rdi, [rbp+16]
 	mov	rsi, qword [rdi]; # of items
 	shl	rsi, 5 ; # of items * 32 for jit size
 	syscall
