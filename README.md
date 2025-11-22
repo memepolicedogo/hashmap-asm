@@ -17,5 +17,7 @@ To remove a value from the map use `remove_item` function. It takes the same arg
 `int    remove_item(map* map, char* key);`<br>
 If you're done with a map you can free the memory yourself using the `sys_unmap` syscall, or you can just pass it to the `destroy_map` function<br>
 This function returns the result of the `sys_unmap` syscall, so you can use its docs to troubleshoot if something isn't working<br>
-`int    destroy_map(map* map);`
+`int    destroy_map(map* map);`<br>
+I haven't tested this function yet but it should work i think<br>
+`map*   extend_map(map* map, uint64 size);`
 

@@ -159,6 +159,13 @@ get_item:
 global write_item;{
 global add_item
 global update_item
+;void	write_hash(map* map, uint64 hash, void* value);
+write_hash:	; internal helper function that allows us to reuse the code in this function
+	enter
+	; expects the hash in rax, the map in r8, and the value at rbp+32
+	mov	r8, qword [rbp+16]
+	mov	rax, qword [rbp+24]
+	jmp	post_hash
 ; void	write_item(map* map, char* key, void* value):
 ; aliases for pussies
 update_item:
@@ -172,6 +179,7 @@ write_item:
 	mov	rax, qword [rbp+24]
 	push	rax
 	call	hash_string
+post_hash:
 	; rax now has the hash
 	push	rax
 	; calculate index
@@ -281,6 +289,59 @@ create_map:
 .ret:
 	mov	rsp, rbp
 	pop	rbp
+	ret
+;}
+global extend_map;{
+; map*	extend_map(map* map, uint64 size);
+extend_map:
+	enter
+	; push the size onto the stack
+	mov	rax, qword [rbp+24]
+	push	rax
+	call	create_map
+	; store the size in r8
+	pop	r8
+	cmp	rax, 0
+	jl	.error
+	; rax now has an initialized map 
+	; we need to go through the old map and add the values back
+	; destination reg just makes sense for the new one
+	mov	rdi, rax
+	; rsi holds the old
+	mov	rsi, qword [rbp+16]
+	; work backwards from the bottom
+	mov	rax, qword [rsi+8]	; pointer to the next free space in the old one
+	mov	rsi, rax
+.loop:
+	sub	rsi, 24	; get to the top of the next item
+	cmp	rsi, qword [rbp+16] ; once we've done all them we'll end up 8 bytes above the start of the map
+	jle	.end	; we just go
+	cmp	qword [rsi], 0 ; if there is no hash we skip
+	je	.loop
+	; If there is a hash we have some work to do
+	; use rax as an intermediary
+	; push value*
+	mov	rax, qword [rsi+8]
+	push	rax
+	; push hash
+	mov	rax, qword [rsi]
+	push	rax
+	; push map
+	push	rdi
+	; call helper func to add value
+	call	write_hash
+	; clear stack
+	pop	rax
+	pop	rax
+	pop	rax
+	; continue loop
+	jmp	.loop
+.end:
+	mov	rax, rdi
+	leave
+	ret
+.error:
+	leave
 	ret
 ;}
 global destroy_map;{
