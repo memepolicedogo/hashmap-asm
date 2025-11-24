@@ -6,6 +6,11 @@
 	mov	rsp, rbp
 	pop	rbp
 %endmacro
+%define MAP_EXTRA	8
+%define	MAP_ARRAY	16
+%define ITEM_VALUE	8
+%define ITEM_NEXT	16
+
 section .text
 ; Size is ALWAYS # of elements
 extern	hash_string
@@ -41,7 +46,7 @@ get_item:
 	mov	rsi, 24
 	mul	rsi
 	; offset in rax
-	add	r8, 16
+	add	r8, ARRAY_OFFEST
 	; start of the array
 	add	r8, rax
 	; location of the item
@@ -50,7 +55,7 @@ get_item:
 	cmp	qword [r8], rax
 	jne	.collision
 	; if so we have to check for links
-	add	r8, 16	; offset of next
+	add	r8, ITEM_NEXT	; offset of next
 	cmp	qword [r8], 0
 	jne	.moveUp
 	; no links? just delete the stuff
@@ -61,7 +66,7 @@ get_item:
 	jmp	.exit
 .moveUp:
 	mov	rsi, qword [r8]
-	add	rsi, 16
+	add	rsi, ITEM_NEXT
 	mov	rdi, r8
 	std	; right to left
 	; set direction flag not the other std
@@ -79,7 +84,7 @@ get_item:
 	; use rdi for this because of rep movsq, rdi will be ourjit
 .collisionLoop:
 	; get pointer to next
-	mov	rdi, qword [r8+16]
+	mov	rdi, qword [r8+ITEM_NEXT]
 	; check if next is real
 	cmp	rdi, 0
 	je	.eInval
@@ -92,7 +97,7 @@ get_item:
 	
 .collisionEnd:
 	; get the pointer to the item following our target
-	mov	rsi, qword [rdi+16]
+	mov	rsi, qword [rdi+ITEM_NEXT]
 	; Check if there is a following item
 	cmp	rsi, 0
 	jne	.noNext
@@ -103,7 +108,7 @@ get_item:
 	jmp	.exit
 .noNext:
 	; If our target is the end of the list, just null the pointer in the preceding item
-	mov	qword [r8+16], 0
+	mov	qword [r8+ITEM_NEXT], 0
 .exit:
 	mov	rax, 0
 	leave
@@ -134,7 +139,7 @@ get_item:
 	mov	rsi, 24
 	mul	rsi
 	; offset in rax
-	add	r8, 16
+	add	r8, MAP_ARRAY
 	; start of the array
 	add	r8, rax
 	; location of the item
@@ -142,13 +147,13 @@ get_item:
 .collisionLoop:
 	cmp	qword [r8], rax
 	je	.collisionEnd
-	add	r8, 16	; offset of next
+	add	r8, ITEM_NEXT	; offset of next
 	mov	r8, qword [r8]
 	cmp	r8, 0
 	je	.eInval
 	jmp	.collisionLoop
 .collisionEnd:
-	mov	rax, qword [r8+8]
+	mov	rax, qword [r8+ITEM_VALUE]
 	leave
 	ret
 .eInval:
@@ -201,7 +206,7 @@ post_hash:
 	mul	rsi	; rax*24
 	; rax now has our offset
 	mov	rsi, r8
-	add	rsi, 16
+	add	rsi, MAP_ARRAY
 	add	rsi, rax
 	;rsi now points to our slot in the array
 	pop	rax
@@ -216,25 +221,47 @@ post_hash:
 	; and update the pointer in the preceding collision values to reflect the situation
 	; first we need to follow the linked list
 .collisionLoop:
-	add	rsi, 16 ; offset of the item pointer
+	; Check if we encounter the hash in the linked list
+	cmp	qword [rsi], rax
+	je	.noCollision
+	; Go to next item
+	add	rsi, ITEM_NEXT ; offset of the item pointer
 	cmp	qword [rsi], 0
 	je	.collisionEnd
 	; update our item pointer
 	mov	rsi, qword [rsi]
 	jmp	.collisionLoop
 .collisionEnd:
-	; rsi points to the next field of the last collided item
-	add	r8, 8 ; the 2nd qword in the map struct is a pointer to the extra space
-	mov	r8, qword [r8]	; get the free space pointer
-	mov	qword [rsi], r8	; store the free space pointer 
+	; check that we aren't at the size limit
+	; calculate the end
+	mov	r9, qword [r8]	; size of the map
+	shl	r9, 5		; size * 32 = bytes allocated
+	add	r9, r8		; bytes allocated + &map = &end
+	sub	r9, 24		; need 24 bytes from the end to write a new item
+	add	r8, MAP_EXTRA	; the 2nd qword in the map struct is a pointer to the extra space
+	mov	r8, qword [r8]	; &extra
+	cmp	r8, r9		; is &extra >= &end?
+	jge	.noSpace
+	; If not we can write to it
+	mov	qword [rsi], r8	; the next field of this item should be the free space pointer
 	mov	rsi, r8 ; write to the free space pointer
+	; get the map pointer again
+	mov	r8, qword [rbp+16]
+	; get to extra
+	add	r8, MAP_EXTRA
+	; add 24
+	add	qword [r8], 24
 .noCollision:
 	; add to array
 	; item.hash = hash
 	mov	qword [rsi], rax
 	mov	rax, qword [rbp+32]
 	; item.value = value
-	mov	qword [rsi+8], rax
+	mov	qword [rsi+ITEM_VALUE], rax
+	leave
+	ret
+.noSpace:
+	mov	rax, -12
 	leave
 	ret
 ;}
@@ -268,7 +295,7 @@ create_map:
 	; there are rsi elements of the array
 	; rsi*24 = the size of the array in bytes
 	; the array therefore must end at rax+16+rsi*24
-	add	rax, 16
+	add	rax, MAP_ARRAY
 	push	rax	; we need rax for multiplication
 	mov	rax, rsi
 	mov	rsi, 24 ; rsi becomes the markiplier
@@ -281,7 +308,7 @@ create_map:
 	pop	rax
 	; this must be the end of the array
 	add	rsi, rax
-	sub	rax, 8	; this is hwere we want to store that
+	sub	rax, MAP_EXTRA	; this is hwere we want to store that
 	mov	qword [rax], rsi
 	; now the struct is setup as i want
 	pop	rax	; we could have just subtracted 8 again but i already pushed it earlier so im not gonn do that
@@ -291,9 +318,9 @@ create_map:
 	pop	rbp
 	ret
 ;}
-global extend_map;{
-; map*	extend_map(map* map, uint64 size);
-extend_map:
+global resize_map;{
+; map*	resize_map(map* map, uint64 size);
+resize_map:
 	enter
 	; push the size onto the stack
 	mov	rax, qword [rbp+24]
@@ -310,7 +337,7 @@ extend_map:
 	; rsi holds the old
 	mov	rsi, qword [rbp+16]
 	; work backwards from the bottom
-	mov	rax, qword [rsi+8]	; pointer to the next free space in the old one
+	mov	rax, qword [rsi+MAP_EXTRA]	; pointer to the next free space in the old one
 	mov	rsi, rax
 .loop:
 	sub	rsi, 24	; get to the top of the next item
@@ -321,7 +348,7 @@ extend_map:
 	; If there is a hash we have some work to do
 	; use rax as an intermediary
 	; push value*
-	mov	rax, qword [rsi+8]
+	mov	rax, qword [rsi+ITEM_VALUE]
 	push	rax
 	; push hash
 	mov	rax, qword [rsi]

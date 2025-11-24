@@ -9,6 +9,7 @@ of the structure to store the result of any hash collisions, this function alloc
 `map*   create_map(uint64 size);`<br>
 To write any data to the map use `write_item`, you can also use `add_item` or `update_item`, as these are just aliases for the same function.<br>
 This takes three arguments, a pointer to an initialized map, a string(char pointer) key, and an anonomous pointer to the data<br>
+If there isn't enough memory in the map to write the new value it'll return -12 in RAX and you'll have to grow the map with `resize_map`<br>
 `void   write_item(map* map, char* key, void* value);`<br>
 To retrive data use `get_item`, it takes a map pointer, a string key, and returns the anonomous value pointer<br>
 If no such value exists, it'll return -1<br>
@@ -19,5 +20,5 @@ If you're done with a map you can free the memory yourself using the `sys_unmap`
 This function returns the result of the `sys_unmap` syscall, so you can use its docs to troubleshoot if something isn't working<br>
 `int    destroy_map(map* map);`<br>
 I haven't tested this function yet but it should work i think<br>
-`map*   extend_map(map* map, uint64 size);`
+`map*   resize_map(map* map, uint64 size);`
 
